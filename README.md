@@ -19,6 +19,10 @@ Example output:
 	12:07:04 Up   200 778.494798ms
 
 
+## Download
+
+Check the [release](https://github.com/stojg/ascendam/releases) section if there is a pre-built binary for your platform
+
 ## Build
 
 	$ go build ascendam.go
