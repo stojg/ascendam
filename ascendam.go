@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"net/http"
 	"fmt"
 	"os"
@@ -14,6 +15,11 @@ var Usage = func() {
 	flag.PrintDefaults()
 }
 
+var timeout_ms = time.Duration(30 * time.Second)
+
+func dialTimeout(network, addr string) (net.Conn, error) {
+	return net.DialTimeout(network, addr, timeout_ms)
+}
 
 func main() {
 
@@ -38,40 +44,55 @@ func main() {
 
 	timeout_ms := time.Millisecond * time.Duration(max_time_ms)
 
+	transport := http.Transport{
+		Dial: dialTimeout,
+	}
+
+	client := http.Client{
+		Transport: &transport,
+	}
+
 	fmt.Printf("Running uptime check on '%s'\n", url)
 
 	fmt.Printf("Timeout is set to %s\n", timeout_ms)
 
-	server_up := true
-	for {
+	server_up := false
 
+	for {
 		failed := false
 
 		// fetch page
 		start := time.Now()
-		resp, err := http.Get(url)
+		resp, err := client.Get(url)
 		elapsed := time.Since(start)
 
-		if err != nil {
-			fmt.Println("Server unavailable")
-			os.Exit(2)
-		}
-		defer resp.Body.Close()
+		down_message := ""
 
-		if resp.StatusCode != 200 || (timeout_ms > 0 && elapsed > timeout_ms) {
+		if err != nil {
+			down_message = fmt.Sprintf("Down\t%s\t%s\t\t%s", "n/a", elapsed, err)
 			failed = true
+			time.Sleep(50 * time.Millisecond)
+		} else {
+			defer resp.Body.Close()
+
+			if resp.StatusCode != 200 {
+				down_message = fmt.Sprintf("Down\t%d\t%s", resp.StatusCode, elapsed)
+				failed = true
+			}
+
+			if timeout_ms > 0 && elapsed > timeout_ms {
+				down_message = fmt.Sprintf("Down\t%d\t%s", resp.StatusCode, elapsed)
+				failed = true
+			}
 		}
 
 		if failed && server_up {
 			server_up = false
-			log.Printf("Down\t%d\t%s", resp.StatusCode, elapsed)
+			log.Print(down_message)
 		} else if !failed && !server_up {
 			server_up = true
 			log.Printf("Up\t%d\t%s", resp.StatusCode, elapsed)
 		}
 	}
-
-
-
 
 }
