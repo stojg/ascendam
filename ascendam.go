@@ -90,7 +90,7 @@ func main() {
 
 func getCode(url string, client *http.Client) (code int, err error) {
 	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Add("User-Agent", "MustWin/health-checker")
+	req.Header.Add("User-Agent", "github.com/stojg/ascendam")
 	resp, err := client.Do(req)
 
 	if err != nil {
