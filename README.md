@@ -19,9 +19,9 @@ Example output:
 	12:07:04 Up   200 778.494798ms
 
 
-## Download
+## Downloads
 
-Check [bintray.dl](http://dl.bintray.com/stojg/go/) if there is a pre-built binary for your platform
+Check [https://github.com/stojg/ascendam/releases](https://github.com/stojg/ascendam/releases) if there is a pre-built binary for your platform.
 
 ## Build
 
