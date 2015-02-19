@@ -21,7 +21,7 @@ Example output:
 
 ## Download
 
-Check the [release](https://github.com/stojg/ascendam/releases) section if there is a pre-built binary for your platform
+Check [bintray.dl](http://dl.bintray.com/stojg/go/) if there is a pre-built binary for your platform
 
 ## Build
 
