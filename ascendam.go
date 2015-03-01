@@ -10,8 +10,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
-    "strings"
 )
 
 var Usage = func() {
@@ -74,25 +74,25 @@ func getState(url string, client *http.Client) (state bool, message string) {
 		if e, ok := err.(net.Error); ok && e.Timeout() {
 			return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out")
 		}
-        if strings.Contains(err.Error(), "use of closed network connection") {
-            return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out (cancelled)")
-        }
-        return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, err)
+		if strings.Contains(err.Error(), "use of closed network connection") {
+			return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out (cancelled)")
+		}
+		return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, err)
 	}
 	if code != 200 {
-		return DOWN, fmt.Sprintf("Down\t%d\t%s", code, elapsed)
+		return DOWN, fmt.Sprintf("Down\t%d\t%s\t%s", code, elapsed, "non 200 response code")
 	}
 	return UP, fmt.Sprintf("Up\t%d\t%s", code, elapsed)
 }
 
 func getClient(timeout_ms time.Duration) *http.Client {
 	transport := &httpclient.Transport{
-		RequestTimeout:    timeout_ms,
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
 		DisableKeepAlives: false,
 	}
 	return &http.Client{
 		Transport: transport,
+		Timeout:   timeout_ms,
 	}
 }
 
