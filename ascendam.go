@@ -26,14 +26,13 @@ const (
 	DOWN = false
 )
 
-type event struct {
-	Date     time.Time
+type Event struct {
 	LoadTime time.Duration
 	State    bool
 }
 
 type EventList struct {
-	Events   []event
+	Events   []Event
 	Outages  int
     UpDuration time.Duration
     DownDuration   time.Duration
@@ -57,8 +56,7 @@ func (e *EventList) Add(state bool, loadTime time.Duration) {
         e.Outages += 1
     }
 
-	e.Events = append(e.Events, event{
-		Date:     time.Now(),
+	e.Events = append(e.Events, Event{
 		State:    state,
 		LoadTime: loadTime,
 	})
