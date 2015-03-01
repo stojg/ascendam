@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/mreiferson/go-httpclient"
@@ -12,7 +13,6 @@ import (
 	"os"
 	"strings"
 	"time"
-    "errors"
 )
 
 var Usage = func() {
@@ -87,7 +87,7 @@ func getState(url string, client *http.Client) (state bool, message string) {
 }
 
 func noRedirect(*http.Request, []*http.Request) error {
-    return errors.New("redirect discovered")
+	return errors.New("redirect discovered")
 }
 
 func getClient(timeout_ms time.Duration) *http.Client {
@@ -96,9 +96,9 @@ func getClient(timeout_ms time.Duration) *http.Client {
 		DisableKeepAlives: false,
 	}
 	return &http.Client{
-		Transport: transport,
-		Timeout:   timeout_ms,
-        CheckRedirect: noRedirect,
+		Transport:     transport,
+		Timeout:       timeout_ms,
+		CheckRedirect: noRedirect,
 	}
 }
 

@@ -117,25 +117,25 @@ func TestGetStateTimeout(t *testing.T) {
 }
 
 func TestGetStateRedirect(t *testing.T) {
-    ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        http.Redirect(w, r, "/yolo", 302)
-    }))
-    defer ts.Close()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/yolo", 302)
+	}))
+	defer ts.Close()
 
-    client := getClient(time.Millisecond * 30)
-    up, message := getState(ts.URL, client)
+	client := getClient(time.Millisecond * 30)
+	up, message := getState(ts.URL, client)
 
-    if up != DOWN {
-        t.Error("Expected webserver to be DOWN, not UP")
-    }
+	if up != DOWN {
+		t.Error("Expected webserver to be DOWN, not UP")
+	}
 
-    if !strings.Contains(message, "Down") {
-        t.Errorf("Message should contain Down, got '%s'", message)
-    }
+	if !strings.Contains(message, "Down") {
+		t.Errorf("Message should contain Down, got '%s'", message)
+	}
 
-    if !strings.Contains(message, "redirect discovered") {
-        t.Errorf("Message should contain 'redirect discovered', got '%s'", message)
-    }
+	if !strings.Contains(message, "redirect discovered") {
+		t.Errorf("Message should contain 'redirect discovered', got '%s'", message)
+	}
 }
 
 func getServer(timeout int, respCode int) *httptest.Server {
