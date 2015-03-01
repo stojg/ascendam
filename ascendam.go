@@ -193,10 +193,16 @@ func getCode(url string, client *http.Client) (code int, err error) {
 	}
 	defer resp.Body.Close()
 
-	_, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
+    var body []byte
+	body, err = ioutil.ReadAll(resp.Body)
+
+    if err != nil {
 		return 0, err
 	}
+
+    if len(body) < 1 {
+        return code, errors.New("Response body is 0 bytes")
+    }
 
 	return resp.StatusCode, nil
 }
