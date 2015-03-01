@@ -1,21 +1,28 @@
 package main
 
 import (
-	"net/http"
-	"fmt"
-	"os"
-	"flag"
-	"log"
-	"time"
-	"io/ioutil"
 	"crypto/tls"
+	"flag"
+	"fmt"
 	"github.com/mreiferson/go-httpclient"
+	"io/ioutil"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"time"
+    "strings"
 )
 
 var Usage = func() {
-	fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Usage of ascendam:\n")
 	flag.PrintDefaults()
 }
+
+const (
+	UP   = true
+	DOWN = false
+)
 
 func main() {
 
@@ -38,53 +45,54 @@ func main() {
 		os.Exit(1)
 	}
 
-	timeout_ms := time.Millisecond * time.Duration(max_time_ms)
-
-	var transport = &httpclient.Transport {
-		ConnectTimeout: timeout_ms,
-		ResponseHeaderTimeout: timeout_ms,
-		RequestTimeout: timeout_ms,
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-
-	var client = &http.Client{
-		Transport: transport,
-	}
+	timeout := time.Millisecond * time.Duration(max_time_ms)
 
 	fmt.Printf("Running uptime check on '%s'\n", url)
 
-	fmt.Printf("Timeout is set to %s\n", timeout_ms)
+	fmt.Printf("Timeout is set to %s\n", timeout)
 
-	last_state := true
-
-	var message string
+	// initial run, always show state
+	last_state, message := getState(url, getClient(timeout))
+	log.Print(message)
 
 	for {
-		state := false
-
-		// fetch page
-		start := time.Now()
-		code, err := getCode(url, client)
-		elapsed := time.Since(start)
-
-		if err != nil {
-			message = fmt.Sprintf("Down\t%s\t%s\t\t%s", "n/a", elapsed, err)
-			state = true
-			time.Sleep(50 * time.Millisecond)
-		} else if code != 200 {
-			message = fmt.Sprintf("Down\t%d\t%s", code, elapsed)
-			state = true
-		} else  if timeout_ms > 0 && elapsed > timeout_ms {
-			message = fmt.Sprintf("Down\t%d\t%s", code, elapsed)
-			state = true
-		} else {
-			message = fmt.Sprintf("Up\t%d\t%s", code, elapsed)
-		}
-
+		state, message := getState(url, getClient(timeout))
 		if last_state != state {
 			log.Print(message)
 			last_state = state
 		}
+		// don't slam the server
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func getState(url string, client *http.Client) (state bool, message string) {
+	start := time.Now()
+	code, err := getCode(url, client)
+	elapsed := time.Since(start)
+	if err != nil {
+		if e, ok := err.(net.Error); ok && e.Timeout() {
+			return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out")
+		}
+        if strings.Contains(err.Error(), "use of closed network connection") {
+            return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out (cancelled)")
+        }
+        return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, err)
+	}
+	if code != 200 {
+		return DOWN, fmt.Sprintf("Down\t%d\t%s", code, elapsed)
+	}
+	return UP, fmt.Sprintf("Up\t%d\t%s", code, elapsed)
+}
+
+func getClient(timeout_ms time.Duration) *http.Client {
+	transport := &httpclient.Transport{
+		RequestTimeout:    timeout_ms,
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
+		DisableKeepAlives: false,
+	}
+	return &http.Client{
+		Transport: transport,
 	}
 }
 
@@ -92,16 +100,13 @@ func getCode(url string, client *http.Client) (code int, err error) {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Add("User-Agent", "github.com/stojg/ascendam")
 	resp, err := client.Do(req)
-
 	if err != nil {
 		return 0, err
 	}
-	defer func() {
-		resp.Body.Close()
-	}()
+	defer resp.Body.Close()
 
 	_, err = ioutil.ReadAll(resp.Body)
-	if (err != nil) {
+	if err != nil {
 		return 0, err
 	}
 
