@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"time"
+    "errors"
 )
 
 var Usage = func() {
@@ -85,6 +86,10 @@ func getState(url string, client *http.Client) (state bool, message string) {
 	return UP, fmt.Sprintf("Up\t%d\t%s", code, elapsed)
 }
 
+func noRedirect(*http.Request, []*http.Request) error {
+    return errors.New("redirect discovered")
+}
+
 func getClient(timeout_ms time.Duration) *http.Client {
 	transport := &httpclient.Transport{
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
@@ -93,6 +98,7 @@ func getClient(timeout_ms time.Duration) *http.Client {
 	return &http.Client{
 		Transport: transport,
 		Timeout:   timeout_ms,
+        CheckRedirect: noRedirect,
 	}
 }
 
