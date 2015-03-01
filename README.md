@@ -1,29 +1,38 @@
 # Ascendam
 
-My own personal website up / down checker.
+My own personal web site up / down checker.
  
-It's good for testing deployment tools and that there is no downtime during deployment.
+I'm personally using it for testing deployment tools and to measure eventual down time.
 
 ## Usage
 
-	./ascendam -url=http://twitter.com -max-ms=1000
+	ascendam -url=http://twitter.com -max-ms=1300
 
-Will constantly check if http://twitter.com responds with a 200 status within 1000ms.
+Will constantly check if http://twitter.com responds with a 200 status within 1300ms. HTTP redirection is 
+regarded as down.
 
 Example output:
 
-	$ ./ascendam -url=http://twitter.com -max-ms=1000
-	Running uptime check on 'http://twitter.com'
-	Timeout is set to 1s
-	12:07:04 Down 200 1.554766774s
-	12:07:04 Up   200 778.494798ms
+	$ ascendam -url=https://twitter.com -max-ms=1300
+    Running uptime check on 'https://twitter.com'
+    Timeout is set to 1.3s
+    15:29:53 Down	n/a	1.305579983s	request timed out (cancelled)
+    15:29:56 Up		200	897.269721ms
+    15:29:58 Down	n/a	1.304362985s	request timed out (cancelled)
+
+## Installation via go get
+
+To install ascendam, please use go get. I tag versions so feel free to checkout that tag and recompile.
+
+	$ go get github.com/stojg/ascendam
+	...
+	$ ascendam -h
+
+## Installation via binaries
+
+Check [https://github.com/stojg/ascendam/releases](https://github.com/stojg/ascendam/releases) if there is a pre-built 
+binary for your platform. If there is download it, unzip and put somewhere in your path.
 
 
-## Downloads
 
-Check [https://github.com/stojg/ascendam/releases](https://github.com/stojg/ascendam/releases) if there is a pre-built binary for your platform.
-
-## Build
-
-	$ go build ascendam.go
 
