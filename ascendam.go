@@ -74,6 +74,9 @@ func (e *EventList) AvgLoadTime() time.Duration {
 		avgTime = avgTime + event.LoadTime
 		nonOutages += 1
 	}
+    if avgTime.Nanoseconds() == 0 {
+        return 0
+    }
 	return avgTime / time.Duration(nonOutages)
 }
 
