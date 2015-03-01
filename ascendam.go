@@ -26,21 +26,19 @@ const (
 )
 
 func main() {
-
-	// Not as extensive time logging, time is good enough
+	// Just log events with the timestamp, skip the date
 	log.SetFlags(log.Ltime)
 
-	// Set up command line flags
+	// Set up commandline flags
 	var url string
 	flag.StringVar(&url, "url", "", "the url to check")
-
 	var max_time_ms int
 	flag.IntVar(&max_time_ms, "max-ms", 30000, "max milliseconds")
-
-	// setup usage instructions
+	// Usage instructions
 	flag.Usage = Usage
 	flag.Parse()
 
+	// -url is required
 	if url == "" {
 		flag.Usage()
 		os.Exit(1)
@@ -49,13 +47,12 @@ func main() {
 	timeout := time.Millisecond * time.Duration(max_time_ms)
 
 	fmt.Printf("Running uptime check on '%s'\n", url)
-
 	fmt.Printf("Timeout is set to %s\n", timeout)
-
 	// initial run, always show state
 	last_state, message := getState(url, getClient(timeout))
 	log.Print(message)
 
+	// infinity loop
 	for {
 		state, message := getState(url, getClient(timeout))
 		if last_state != state {
@@ -67,6 +64,8 @@ func main() {
 	}
 }
 
+// getState takes an url and a *http.Client and will return a UP or DOWN state and
+// a pre formatted message
 func getState(url string, client *http.Client) (state bool, message string) {
 	start := time.Now()
 	code, err := getCode(url, client)
@@ -86,22 +85,25 @@ func getState(url string, client *http.Client) (state bool, message string) {
 	return UP, fmt.Sprintf("Up\t%d\t%s", code, elapsed)
 }
 
-func noRedirect(*http.Request, []*http.Request) error {
-	return errors.New("redirect discovered")
-}
-
+// getClient will return a *http.Client that has timeouts set and
+// disallows redirections.
 func getClient(timeout_ms time.Duration) *http.Client {
 	transport := &httpclient.Transport{
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
 		DisableKeepAlives: false,
 	}
 	return &http.Client{
-		Transport:     transport,
-		Timeout:       timeout_ms,
-		CheckRedirect: noRedirect,
+		Transport: transport,
+		Timeout:   timeout_ms,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return errors.New("redirect discovered")
+		},
 	}
 }
 
+// getCode is simple wrapper for doing a request and return the http status
+// code and eventually an error. If there is an error the http status code
+// will be set to 0.
 func getCode(url string, client *http.Client) (code int, err error) {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Add("User-Agent", "github.com/stojg/ascendam")
