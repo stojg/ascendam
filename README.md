@@ -2,7 +2,10 @@
 
 My own personal web site up / down checker.
  
-I'm personally using it for testing deployment tools and to measure eventual down time.
+I'm using it for testing and developing deployment tools and to measure eventual down time during 
+server / application switch over.
+
+> From latin: ad- (“[up] to”) +‎ scandō (“climb”).
 
 ## Usage
 
