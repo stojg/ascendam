@@ -87,6 +87,22 @@ func init() {
 }
 
 func main() {
+
+    // setup trapping of SIGINT
+    c := make(chan os.Signal, 1)
+    signal.Notify(c, os.Interrupt)
+    go func() {
+        // sig is a ^C, handle it
+        for sig := range c {
+            fmt.Printf("caught %s\n\n", sig)
+            fmt.Printf("%d outages of %d checks \n", eventList.Outages, len(eventList.Events))
+            fmt.Printf("Average loadtime: %s \n", eventList.AvgLoadTime())
+            fmt.Printf("Downtime: %s \n", eventList.DownDuration)
+            fmt.Printf("Uptime: %s \n", eventList.UpDuration)
+            os.Exit(0)
+        }
+    }()
+
 	// Just log events with the timestamp, skip the date
 	log.SetFlags(log.Ltime)
 
@@ -112,21 +128,6 @@ func main() {
 	// initial run, always show state
 	last_state, message := getState(url, getClient(timeout))
 	log.Print(message)
-
-	// setup trapping of SIGINT
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	go func() {
-		// sig is a ^C, handle it
-		for sig := range c {
-			fmt.Printf("caught %s\n\n", sig)
-			fmt.Printf("%d outages of %d checks \n", eventList.Outages, len(eventList.Events))
-			fmt.Printf("Average loadtime: %s \n", eventList.AvgLoadTime())
-			fmt.Printf("Downtime: %s \n", eventList.DownDuration)
-			fmt.Printf("Uptime: %s \n", eventList.UpDuration)
-			os.Exit(0)
-		}
-	}()
 
 	// infinity loop
 	for {
