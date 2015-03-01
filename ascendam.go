@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
 	"time"
 )
@@ -24,6 +25,63 @@ const (
 	UP   = true
 	DOWN = false
 )
+
+type event struct {
+	Date     time.Time
+	LoadTime time.Duration
+	State    bool
+}
+
+type EventList struct {
+	Events   []event
+	Outages  int
+    UpDuration time.Duration
+    DownDuration   time.Duration
+	LastTime time.Time
+}
+
+func (e *EventList) Add(state bool, loadTime time.Duration) {
+
+	// if this is an UP event add now - lastTime to Uptime
+	if state == UP && !e.LastTime.IsZero() {
+		e.UpDuration += (time.Now().Sub(e.LastTime))
+	}
+
+	if state == DOWN && !e.LastTime.IsZero() {
+		e.DownDuration += (time.Now().Sub(e.LastTime))
+	}
+
+    e.LastTime = time.Now()
+
+    if !state {
+        e.Outages += 1
+    }
+
+	e.Events = append(e.Events, event{
+		Date:     time.Now(),
+		State:    state,
+		LoadTime: loadTime,
+	})
+}
+
+func (e *EventList) AvgLoadTime() time.Duration {
+	var avgTime time.Duration
+	nonOutages := 0
+	for _, event := range e.Events {
+		if event.State != UP {
+			continue
+		}
+		avgTime = avgTime + event.LoadTime
+		nonOutages += 1
+	}
+	return avgTime / time.Duration(nonOutages)
+}
+
+var eventList *EventList
+
+func init() {
+    eventList = &EventList{}
+}
 
 func main() {
 	// Just log events with the timestamp, skip the date
@@ -52,6 +110,21 @@ func main() {
 	last_state, message := getState(url, getClient(timeout))
 	log.Print(message)
 
+	// setup trapping of SIGINT
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		// sig is a ^C, handle it
+		for sig := range c {
+			fmt.Printf("caught %s\n\n", sig)
+			fmt.Printf("%d outages of %d checks \n", eventList.Outages, len(eventList.Events))
+			fmt.Printf("Average loadtime: %s \n", eventList.AvgLoadTime())
+			fmt.Printf("Downtime: %s \n", eventList.DownDuration)
+			fmt.Printf("Uptime: %s \n", eventList.UpDuration)
+			os.Exit(0)
+		}
+	}()
+
 	// infinity loop
 	for {
 		state, message := getState(url, getClient(timeout))
@@ -60,7 +133,7 @@ func main() {
 			last_state = state
 		}
 		// don't slam the server
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(1 * time.Millisecond)
 	}
 }
 
@@ -72,16 +145,21 @@ func getState(url string, client *http.Client) (state bool, message string) {
 	elapsed := time.Since(start)
 	if err != nil {
 		if e, ok := err.(net.Error); ok && e.Timeout() {
+			eventList.Add(DOWN, elapsed)
 			return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out")
 		}
 		if strings.Contains(err.Error(), "use of closed network connection") {
+			eventList.Add(DOWN, elapsed)
 			return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out (cancelled)")
 		}
+		eventList.Add(DOWN, elapsed)
 		return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, err)
 	}
 	if code != 200 {
+		eventList.Add(DOWN, elapsed)
 		return DOWN, fmt.Sprintf("Down\t%d\t%s\t%s", code, elapsed, "non 200 response code")
 	}
+	eventList.Add(UP, elapsed)
 	return UP, fmt.Sprintf("Up\t%d\t%s", code, elapsed)
 }
 
