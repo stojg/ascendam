@@ -32,29 +32,31 @@ type Event struct {
 }
 
 type EventList struct {
-	Events   []Event
-	Outages  int
-    UpDuration time.Duration
-    DownDuration   time.Duration
-	LastTime time.Time
+	Events       []Event
+	Outages      int
+	UpDuration   time.Duration
+	DownDuration time.Duration
+	LastTime     time.Time
 }
 
 func (e *EventList) Add(state bool, loadTime time.Duration) {
 
 	// if this is an UP event add now - lastTime to Uptime
-	if state == UP && !e.LastTime.IsZero() {
-		e.UpDuration += (time.Now().Sub(e.LastTime))
+	if !e.LastTime.IsZero() {
+		if state == UP {
+			e.UpDuration += (time.Now().Sub(e.LastTime))
+		}
+
+		if state == DOWN {
+			e.DownDuration += (time.Now().Sub(e.LastTime))
+		}
 	}
 
-	if state == DOWN && !e.LastTime.IsZero() {
-		e.DownDuration += (time.Now().Sub(e.LastTime))
+	e.LastTime = time.Now()
+
+	if state == DOWN {
+		e.Outages += 1
 	}
-
-    e.LastTime = time.Now()
-
-    if !state {
-        e.Outages += 1
-    }
 
 	e.Events = append(e.Events, Event{
 		State:    state,
@@ -72,34 +74,34 @@ func (e *EventList) AvgLoadTime() time.Duration {
 		avgTime = avgTime + event.LoadTime
 		nonOutages += 1
 	}
-    if avgTime.Nanoseconds() == 0 {
-        return 0
-    }
+	if avgTime.Nanoseconds() == 0 {
+		return 0
+	}
 	return avgTime / time.Duration(nonOutages)
 }
 
 var eventList *EventList
 
 func init() {
-    eventList = &EventList{}
+	eventList = &EventList{}
 }
 
 func main() {
 
-    // setup trapping of SIGINT
-    c := make(chan os.Signal, 1)
-    signal.Notify(c, os.Interrupt)
-    go func() {
-        // sig is a ^C, handle it
-        for sig := range c {
-            fmt.Printf("caught %s\n\n", sig)
-            fmt.Printf("%d outages of %d checks \n", eventList.Outages, len(eventList.Events))
-            fmt.Printf("Average loadtime: %s \n", eventList.AvgLoadTime())
-            fmt.Printf("Downtime: %s \n", eventList.DownDuration)
-            fmt.Printf("Uptime: %s \n", eventList.UpDuration)
-            os.Exit(0)
-        }
-    }()
+	// setup trapping of SIGINT
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		// sig is a ^C, handle it
+		for sig := range c {
+			fmt.Printf("caught %s\n\n", sig)
+			fmt.Printf("%d outages of %d checks \n", eventList.Outages, len(eventList.Events))
+			fmt.Printf("Average loadtime: %s \n", eventList.AvgLoadTime())
+			fmt.Printf("Downtime: %s \n", eventList.DownDuration)
+			fmt.Printf("Uptime: %s \n", eventList.UpDuration)
+			os.Exit(0)
+		}
+	}()
 
 	// Just log events with the timestamp, skip the date
 	log.SetFlags(log.Ltime)
@@ -135,7 +137,7 @@ func main() {
 			last_state = state
 		}
 		// don't slam the server
-		time.Sleep(1 * time.Millisecond)
+		time.Sleep(1000 * time.Millisecond)
 	}
 }
 
@@ -193,16 +195,16 @@ func getCode(url string, client *http.Client) (code int, err error) {
 	}
 	defer resp.Body.Close()
 
-    var body []byte
+	var body []byte
 	body, err = ioutil.ReadAll(resp.Body)
 
-    if err != nil {
+	if err != nil {
 		return 0, err
 	}
 
-    if len(body) < 1 {
-        return code, errors.New("Response body is 0 bytes")
-    }
+	if len(body) < 1 {
+		return code, errors.New("Response body is 0 bytes")
+	}
 
 	return resp.StatusCode, nil
 }
