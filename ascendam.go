@@ -21,66 +21,12 @@ var Usage = func() {
 	flag.PrintDefaults()
 }
 
+var eventList *EventList
+
 const (
 	UP   = true
 	DOWN = false
 )
-
-type Event struct {
-	LoadTime time.Duration
-	State    bool
-}
-
-type EventList struct {
-	Events       []Event
-	Outages      int
-	UpDuration   time.Duration
-	DownDuration time.Duration
-	LastTime     time.Time
-}
-
-func (e *EventList) Add(state bool, loadTime time.Duration) {
-
-	// if this is an UP event add now - lastTime to Uptime
-	if !e.LastTime.IsZero() {
-		if state == UP {
-			e.UpDuration += (time.Now().Sub(e.LastTime))
-		}
-
-		if state == DOWN {
-			e.DownDuration += (time.Now().Sub(e.LastTime))
-		}
-	}
-
-	e.LastTime = time.Now()
-
-	if state == DOWN {
-		e.Outages += 1
-	}
-
-	e.Events = append(e.Events, Event{
-		State:    state,
-		LoadTime: loadTime,
-	})
-}
-
-func (e *EventList) AvgLoadTime() time.Duration {
-	var avgTime time.Duration
-	nonOutages := 0
-	for _, event := range e.Events {
-		if event.State != UP {
-			continue
-		}
-		avgTime = avgTime + event.LoadTime
-		nonOutages += 1
-	}
-	if avgTime.Nanoseconds() == 0 {
-		return 0
-	}
-	return avgTime / time.Duration(nonOutages)
-}
-
-var eventList *EventList
 
 func init() {
 	eventList = &EventList{}
@@ -108,9 +54,12 @@ func main() {
 
 	// Set up commandline flags
 	var url string
-	flag.StringVar(&url, "url", "", "the url to check")
-	var max_time_ms int
-	flag.IntVar(&max_time_ms, "max-ms", 30000, "max milliseconds")
+	flag.StringVar(&url, "url", "", "the url to monitor")
+	var max_time_sec int
+	flag.IntVar(&max_time_sec, "timeout", 30, "in seconds")
+	var sleep int
+	flag.IntVar(&sleep, "sleep", 1, "Time between checks, in seconds")
+
 	// Usage instructions
 	flag.Usage = Usage
 	flag.Parse()
@@ -121,7 +70,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	timeout := time.Millisecond * time.Duration(max_time_ms)
+	timeout := time.Second * time.Duration(max_time_sec)
 
 	fmt.Printf("Running uptime check on '%s'\n", url)
 	fmt.Printf("Timeout is set to %s\n", timeout)
@@ -137,7 +86,7 @@ func main() {
 			last_state = state
 		}
 		// don't slam the server
-		time.Sleep(1000 * time.Millisecond)
+		time.Sleep(time.Duration(sleep)*time.Second)
 	}
 }
 
