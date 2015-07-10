@@ -1,6 +1,6 @@
 package main
-import "time"
 
+import "time"
 
 type Event struct {
 	LoadTime time.Duration

@@ -86,7 +86,7 @@ func main() {
 			last_state = state
 		}
 		// don't slam the server
-		time.Sleep(time.Duration(sleep)*time.Second)
+		time.Sleep(time.Duration(sleep) * time.Second)
 	}
 }
 
