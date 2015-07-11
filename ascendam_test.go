@@ -14,8 +14,8 @@ func TestGetCodeServerUp(t *testing.T) {
 	ts := getTestServer(1, 200)
 	defer ts.Close()
 
-	client := getClient(time.Millisecond * 50)
-	code, err := getCode(ts.URL, client)
+	client := getHTTPClient(time.Millisecond * 50)
+	code, err := getHTTPStatus(ts.URL, client)
 	if err != nil {
 		t.Error(err)
 	}
@@ -28,7 +28,7 @@ func TestGetCodeTimeoutAwaitingResponseHeaders(t *testing.T) {
 	ts := getTestServer(50, 200)
 	defer ts.Close()
 
-	_, err := getCode(ts.URL, getClient(time.Millisecond*10))
+	_, err := getHTTPStatus(ts.URL, getHTTPClient(time.Millisecond*10))
 
 	if err == nil {
 		t.Error("Expected a timeout")
@@ -43,7 +43,7 @@ func TestGetCode404(t *testing.T) {
 	ts := getTestServer(1, 404)
 	defer ts.Close()
 
-	code, err := getCode(ts.URL, getClient(time.Millisecond*50))
+	code, err := getHTTPStatus(ts.URL, getHTTPClient(time.Millisecond*50))
 
 	if err != nil {
 		t.Errorf("Got unexpected error message: '%s'", err)
@@ -59,7 +59,7 @@ func TestGetState200Code(t *testing.T) {
 	ts := getTestServer(1, 200)
 	defer ts.Close()
 
-	state, message := getState(ts.URL, getClient(time.Millisecond*50))
+	state, message := checkURL(ts.URL, getHTTPClient(time.Millisecond*50))
 
 	if state != UP {
 		t.Error("Expected webserver to be UP, not DOWN")
@@ -78,7 +78,7 @@ func TestGetStateNon200Code(t *testing.T) {
 	ts := getTestServer(1, 404)
 	defer ts.Close()
 
-	state, message := getState(ts.URL, getClient(time.Millisecond*50))
+	state, message := checkURL(ts.URL, getHTTPClient(time.Millisecond*50))
 
 	if state != DOWN {
 		t.Error("Expected webserver to be DOWN, not UP")
@@ -97,7 +97,7 @@ func TestGetStateTimeout(t *testing.T) {
 	ts := getTestServer(50, 200)
 	defer ts.Close()
 
-	state, message := getState(ts.URL, getClient(time.Millisecond*30))
+	state, message := checkURL(ts.URL, getHTTPClient(time.Millisecond*30))
 
 	if state != DOWN {
 		t.Error("Expected webserver to be DOWN, not UP")
@@ -118,7 +118,7 @@ func TestGetStateRedirect(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	state, message := getState(ts.URL, getClient(time.Millisecond*30))
+	state, message := checkURL(ts.URL, getHTTPClient(time.Millisecond*30))
 
 	if state != DOWN {
 		t.Error("Expected webserver to be DOWN, not UP")

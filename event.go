@@ -17,17 +17,7 @@ type EventList struct {
 
 func (e *EventList) Add(state bool, loadTime time.Duration) {
 
-	// if this is an UP event add now - lastTime to Uptime
-	if !e.LastTime.IsZero() {
-		if state == UP {
-			e.UpDuration += (time.Now().Sub(e.LastTime))
-		}
-
-		if state == DOWN {
-			e.DownDuration += (time.Now().Sub(e.LastTime))
-		}
-	}
-
+	e.calculateDuration(state)
 	e.LastTime = time.Now()
 
 	if state == DOWN {
@@ -41,17 +31,30 @@ func (e *EventList) Add(state bool, loadTime time.Duration) {
 }
 
 func (e *EventList) AvgLoadTime() time.Duration {
-	var avgTime time.Duration
-	nonOutages := 0
+	var sumLoadTime time.Duration
+	upChecks := 0
 	for _, event := range e.Events {
 		if event.State != UP {
 			continue
 		}
-		avgTime = avgTime + event.LoadTime
-		nonOutages += 1
+		upChecks += 1
+		sumLoadTime += event.LoadTime
 	}
-	if avgTime.Nanoseconds() == 0 {
+	if sumLoadTime.Nanoseconds() == 0 {
 		return 0
 	}
-	return avgTime / time.Duration(nonOutages)
+	return sumLoadTime / time.Duration(upChecks)
+}
+
+func (e *EventList) calculateDuration(state bool) {
+	// don't save up or down duration on the first run
+	if e.LastTime.IsZero() {
+		return
+	}
+	if state == UP {
+		e.UpDuration += time.Now().Sub(e.LastTime)
+	}
+	if state == DOWN {
+		e.DownDuration += time.Now().Sub(e.LastTime)
+	}
 }

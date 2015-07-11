@@ -21,7 +21,12 @@ var Usage = func() {
 	flag.PrintDefaults()
 }
 
-var eventList *EventList
+var (
+	eventList    *EventList
+	url          string
+	timeoutSec   int
+	sleepTimeSec int
+)
 
 const (
 	UP   = true
@@ -30,17 +35,24 @@ const (
 
 func init() {
 	eventList = &EventList{}
+
+	flag.StringVar(&url, "url", "", "the url to monitor")
+	flag.IntVar(&timeoutSec, "timeout", 30, "in seconds")
+	flag.IntVar(&sleepTimeSec, "sleep", 1, "Time between checks, in seconds")
+	flag.Usage = Usage
+	flag.Parse()
 }
 
 func main() {
 
+	validateFlags()
+
 	// setup trapping of SIGINT
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
 	go func() {
-		// sig is a ^C, handle it
-		for sig := range c {
-			fmt.Printf("caught %s\n\n", sig)
+		// handle signal interrupts
+		for range sig {
 			fmt.Printf("%d outages of %d checks \n", eventList.Outages, len(eventList.Events))
 			fmt.Printf("Average loadtime: %s \n", eventList.AvgLoadTime())
 			fmt.Printf("Downtime: %s \n", eventList.DownDuration)
@@ -49,76 +61,78 @@ func main() {
 		}
 	}()
 
-	// Just log events with the timestamp, skip the date
-	log.SetFlags(log.Ltime)
+	timeout := time.Second * time.Duration(timeoutSec)
 
-	// Set up commandline flags
-	var url string
-	flag.StringVar(&url, "url", "", "the url to monitor")
-	var max_time_sec int
-	flag.IntVar(&max_time_sec, "timeout", 30, "in seconds")
-	var sleep int
-	flag.IntVar(&sleep, "sleep", 1, "Time between checks, in seconds")
+	fmt.Printf("Running uptime check on '%s'\n", url)
+	fmt.Printf("Timeout is set to %s\n", timeout)
 
-	// Usage instructions
-	flag.Usage = Usage
-	flag.Parse()
+	// initial run, always show state
+	lastState, message := checkURL(url, getHTTPClient(timeout))
+	log.Print(message)
 
-	// -url is required
+	for {
+		state, message := checkURL(url, getHTTPClient(timeout))
+		if lastState != state {
+			log.Print(message)
+			lastState = state
+		}
+		time.Sleep(time.Duration(sleepTimeSec) * time.Second)
+	}
+}
+
+func validateFlags() {
+	// url is required
 	if url == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
-
-	timeout := time.Second * time.Duration(max_time_sec)
-
-	fmt.Printf("Running uptime check on '%s'\n", url)
-	fmt.Printf("Timeout is set to %s\n", timeout)
-	// initial run, always show state
-	last_state, message := getState(url, getClient(timeout))
-	log.Print(message)
-
-	// infinity loop
-	for {
-		state, message := getState(url, getClient(timeout))
-		if last_state != state {
-			log.Print(message)
-			last_state = state
-		}
-		// don't slam the server
-		time.Sleep(time.Duration(sleep) * time.Second)
-	}
 }
 
-// getState takes an url and a *http.Client and will return a UP or DOWN state and
+// checkURL takes an url and a *http.Client and will return a UP or DOWN state and
 // a pre formatted message
-func getState(url string, client *http.Client) (state bool, message string) {
+func checkURL(url string, client *http.Client) (state bool, message string) {
 	start := time.Now()
-	code, err := getCode(url, client)
+	statusCode, err := getHTTPStatus(url, client)
 	elapsed := time.Since(start)
-	if err != nil {
-		if e, ok := err.(net.Error); ok && e.Timeout() {
+
+	if err == nil {
+		if statusCode != 200 {
 			eventList.Add(DOWN, elapsed)
-			return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out")
+			return DOWN, fmt.Sprintf("Down\t%d\t%s\t%s", statusCode, elapsed, "non 200 response code")
 		}
-		if strings.Contains(err.Error(), "use of closed network connection") {
-			eventList.Add(DOWN, elapsed)
-			return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out (cancelled)")
-		}
-		eventList.Add(DOWN, elapsed)
-		return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, err)
+		eventList.Add(UP, elapsed)
+		return UP, fmt.Sprintf("Up\t%d\t%s", statusCode, elapsed)
 	}
-	if code != 200 {
+
+	// this is a network timeout error
+	if e, ok := err.(net.Error); ok && e.Timeout() {
 		eventList.Add(DOWN, elapsed)
-		return DOWN, fmt.Sprintf("Down\t%d\t%s\t%s", code, elapsed, "non 200 response code")
+		return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out")
 	}
-	eventList.Add(UP, elapsed)
-	return UP, fmt.Sprintf("Up\t%d\t%s", code, elapsed)
+
+	if strings.Contains(err.Error(), "use of closed network connection") {
+		eventList.Add(DOWN, elapsed)
+		return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out (cancelled)")
+	}
+
+	if strings.Contains(err.Error(), "request canceled while waiting for connection") {
+		eventList.Add(DOWN, elapsed)
+		return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out (can't connect)")
+	}
+
+	if strings.Contains(err.Error(), "connection reset by peer") {
+		eventList.Add(DOWN, elapsed)
+		return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "connection denied (reset by peer)")
+	}
+
+	eventList.Add(DOWN, elapsed)
+	return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, err)
+
 }
 
-// getClient will return a *http.Client that has timeouts set and
+// getHTTPClient will return a *http.Client with a connection timeout and
 // disallows redirections.
-func getClient(timeout_ms time.Duration) *http.Client {
+func getHTTPClient(timeout_ms time.Duration) *http.Client {
 	transport := &httpclient.Transport{
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
 		DisableKeepAlives: false,
@@ -132,10 +146,10 @@ func getClient(timeout_ms time.Duration) *http.Client {
 	}
 }
 
-// getCode is simple wrapper for doing a request and return the http status
+// getHTTPStatus is simple wrapper for doing a request and return the http status
 // code and eventually an error. If there is an error the http status code
 // will be set to 0.
-func getCode(url string, client *http.Client) (code int, err error) {
+func getHTTPStatus(url string, client *http.Client) (code int, err error) {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Add("User-Agent", "github.com/stojg/ascendam")
 	resp, err := client.Do(req)
