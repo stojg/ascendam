@@ -11,16 +11,16 @@ import (
 )
 
 func TestGetCodeServerUp(t *testing.T) {
-	ts := getTestServer(1, 200)
-	defer ts.Close()
+	server := getTestServer(1, 200)
+	defer server.Close()
 
 	client := getHTTPClient(time.Millisecond * 50)
-	code, err := getHTTPStatus(ts.URL, client)
-	if err != nil {
-		t.Error(err)
+	check := doCheck(server.URL, client)
+	if check.Error() != nil {
+		t.Error(check.Error())
 	}
-	if code != 200 {
-		t.Errorf("Expected response code 200, got '%d':", code)
+	if check.StatusCode() != 200 {
+		t.Errorf("Expected response code 200, got '%d':", check.StatusCode())
 	}
 }
 
@@ -28,8 +28,9 @@ func TestGetCodeTimeoutAwaitingResponseHeaders(t *testing.T) {
 	ts := getTestServer(50, 200)
 	defer ts.Close()
 
-	_, err := getHTTPStatus(ts.URL, getHTTPClient(time.Millisecond*10))
+	check := doCheck(ts.URL, getHTTPClient(time.Millisecond*10))
 
+	err := check.Error()
 	if err == nil {
 		t.Error("Expected a timeout")
 	}
@@ -43,15 +44,16 @@ func TestGetCode404(t *testing.T) {
 	ts := getTestServer(1, 404)
 	defer ts.Close()
 
-	code, err := getHTTPStatus(ts.URL, getHTTPClient(time.Millisecond*50))
+	check := doCheck(ts.URL, getHTTPClient(time.Millisecond*50))
 
+	err := check.Error()
 	if err != nil {
 		t.Errorf("Got unexpected error message: '%s'", err)
 		return
 	}
 
-	if code != 404 {
-		t.Errorf("Expected response code 404, got '%d':", code)
+	if check.StatusCode() != 404 {
+		t.Errorf("Expected response code 404, got '%d':", check.StatusCode())
 	}
 }
 
@@ -59,9 +61,10 @@ func TestGetState200Code(t *testing.T) {
 	ts := getTestServer(1, 200)
 	defer ts.Close()
 
-	state, message := checkURL(ts.URL, getHTTPClient(time.Millisecond*50))
+	check := checkURL(ts.URL, getHTTPClient(time.Millisecond*50))
+	message := getResult(check)
 
-	if state != UP {
+	if !check.Ok() {
 		t.Error("Expected webserver to be UP, not DOWN")
 	}
 
@@ -78,9 +81,10 @@ func TestGetStateNon200Code(t *testing.T) {
 	ts := getTestServer(1, 404)
 	defer ts.Close()
 
-	state, message := checkURL(ts.URL, getHTTPClient(time.Millisecond*50))
+	check := checkURL(ts.URL, getHTTPClient(time.Millisecond*50))
+	message := getResult(check)
 
-	if state != DOWN {
+	if !check.Ok() {
 		t.Error("Expected webserver to be DOWN, not UP")
 	}
 
@@ -97,9 +101,10 @@ func TestGetStateTimeout(t *testing.T) {
 	ts := getTestServer(50, 200)
 	defer ts.Close()
 
-	state, message := checkURL(ts.URL, getHTTPClient(time.Millisecond*30))
+	check := checkURL(ts.URL, getHTTPClient(time.Millisecond*30))
+	message := getResult(check)
 
-	if state != DOWN {
+	if check.Ok() {
 		t.Error("Expected webserver to be DOWN, not UP")
 	}
 
@@ -118,9 +123,10 @@ func TestGetStateRedirect(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	state, message := checkURL(ts.URL, getHTTPClient(time.Millisecond*30))
+	check := checkURL(ts.URL, getHTTPClient(time.Millisecond*30))
+	message := getResult(check)
 
-	if state != DOWN {
+	if check.Ok() {
 		t.Error("Expected webserver to be DOWN, not UP")
 	}
 

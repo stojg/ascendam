@@ -22,65 +22,75 @@ var Usage = func() {
 }
 
 var (
-	eventList    *EventList
+	checks       *CheckList
 	url          string
 	timeoutSec   int
 	sleepTimeSec int
-)
-
-const (
-	UP   = true
-	DOWN = false
+	verbose      bool
 )
 
 func init() {
-	eventList = &EventList{}
+	checks = &CheckList{}
 
 	flag.StringVar(&url, "url", "", "the url to monitor")
-	flag.IntVar(&timeoutSec, "timeout", 30, "in seconds")
+	flag.IntVar(&timeoutSec, "timeout", 4, "in seconds")
 	flag.IntVar(&sleepTimeSec, "sleep", 1, "Time between checks, in seconds")
+	flag.BoolVar(&verbose, "verbose", false, "Be more verbose")
 	flag.Usage = Usage
 	flag.Parse()
 }
 
 func main() {
 
-	validateFlags()
+	validateArguments()
 
 	// setup trapping of SIGINT
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
 	go func() {
 		// handle signal interrupts
-		for range sig {
-			fmt.Printf("%d outages of %d checks \n", eventList.Outages, len(eventList.Events))
-			fmt.Printf("Average loadtime: %s \n", eventList.AvgLoadTime())
-			fmt.Printf("Downtime: %s \n", eventList.DownDuration)
-			fmt.Printf("Uptime: %s \n", eventList.UpDuration)
+		for _ = range sig {
+			printSummary(checks)
 			os.Exit(0)
 		}
 	}()
 
 	timeout := time.Second * time.Duration(timeoutSec)
+	sleep := time.Second * time.Duration(sleepTimeSec)
 
 	fmt.Printf("Running uptime check on '%s'\n", url)
-	fmt.Printf("Timeout is set to %s\n", timeout)
+	fmt.Printf("Timeout is set to %s and pause %s between checks\n", timeout, sleep)
+	fmt.Printf("Stop ascendam with ctrl+c\n")
 
-	// initial run, always show state
-	lastState, message := checkURL(url, getHTTPClient(timeout))
-	log.Print(message)
+	// Always log the first check
+	check := doCheck(url, getHTTPClient(timeout))
+	checks.Add(check)
+	log.Printf("%s\n", getResult(check))
 
+	// @todo(stig): emit a summary every minute
 	for {
-		state, message := checkURL(url, getHTTPClient(timeout))
-		if lastState != state {
-			log.Print(message)
-			lastState = state
+		select {
+		case <-time.After(time.Minute):
+			printSummary(checks)
+
+		case <-time.After(sleep):
+			check := doCheck(url, getHTTPClient(timeout))
+			if verbose || check.Ok() != checks.lastState {
+				log.Printf("%s\n", getResult(check))
+			}
+			checks.Add(check)
 		}
-		time.Sleep(time.Duration(sleepTimeSec) * time.Second)
 	}
 }
 
-func validateFlags() {
+func printSummary(checks *CheckList) {
+	fmt.Printf("\n%d outages of %d checks \n", checks.Down(), checks.Total())
+	fmt.Printf("Average loadtime: %s \n", checks.AvgLoadTime())
+	fmt.Printf("Downtime: %s \n", checks.Downtime())
+	fmt.Printf("Uptime: %s \n", checks.Uptime())
+}
+
+func validateArguments() {
 	// url is required
 	if url == "" {
 		flag.Usage()
@@ -88,73 +98,73 @@ func validateFlags() {
 	}
 }
 
-// checkURL takes an url and a *http.Client and will return a UP or DOWN state and
-// a pre formatted message
-func checkURL(url string, client *http.Client) (state bool, message string) {
-	start := time.Now()
-	statusCode, err := getHTTPStatus(url, client)
-	elapsed := time.Since(start)
+func getResult(check *Check) string {
+	elapsed := check.LoadTime()
 
-	if err == nil {
-		if statusCode != 200 {
-			eventList.Add(DOWN, elapsed)
-			return DOWN, fmt.Sprintf("Down\t%d\t%s\t%s", statusCode, elapsed, "non 200 response code")
+	if check.Ok() {
+		if check.StatusCode() != 200 {
+			return fmt.Sprintf("Down\t%d\t%s\t%s", check.StatusCode(), elapsed, "non 200 response code")
 		}
-		eventList.Add(UP, elapsed)
-		return UP, fmt.Sprintf("Up\t%d\t%s", statusCode, elapsed)
+		return fmt.Sprintf("Up\t%d\t%s", check.StatusCode(), elapsed)
 	}
 
+	err := check.Error()
 	// this is a network timeout error
 	if e, ok := err.(net.Error); ok && e.Timeout() {
-		eventList.Add(DOWN, elapsed)
-		return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out")
+		return fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out")
 	}
 
 	if strings.Contains(err.Error(), "use of closed network connection") {
-		eventList.Add(DOWN, elapsed)
-		return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out (cancelled)")
+		return fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out (timeout)")
 	}
 
 	if strings.Contains(err.Error(), "request canceled while waiting for connection") {
-		eventList.Add(DOWN, elapsed)
-		return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out (can't connect)")
+		return fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "request timed out (can't connect)")
 	}
 
 	if strings.Contains(err.Error(), "connection reset by peer") {
-		eventList.Add(DOWN, elapsed)
-		return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "connection denied (reset by peer)")
+		return fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, "connection denied (reset by peer)")
 	}
 
-	eventList.Add(DOWN, elapsed)
-	return DOWN, fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, err)
-
+	return fmt.Sprintf("Down\t%s\t%s\t%s", "n/a", elapsed, err)
 }
 
 // getHTTPClient will return a *http.Client with a connection timeout and
 // disallows redirections.
-func getHTTPClient(timeout_ms time.Duration) *http.Client {
+func getHTTPClient(timeout time.Duration) *http.Client {
 	transport := &httpclient.Transport{
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
 		DisableKeepAlives: false,
 	}
 	return &http.Client{
 		Transport: transport,
-		Timeout:   timeout_ms,
+		Timeout:   timeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return errors.New("redirect discovered")
 		},
 	}
 }
 
-// getHTTPStatus is simple wrapper for doing a request and return the http status
+// doCheck is simple wrapper for doing a request and return the http status
 // code and eventually an error. If there is an error the http status code
 // will be set to 0.
-func getHTTPStatus(url string, client *http.Client) (code int, err error) {
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Add("User-Agent", "github.com/stojg/ascendam")
-	resp, err := client.Do(req)
+func doCheck(url string, client *http.Client) *Check {
+	check := &Check{}
+
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return 0, err
+		check.error = err
+		return check
+	}
+	req.Header.Add("User-Agent", "github.com/stojg/ascendam")
+
+	check.Start()
+	resp, err := client.Do(req)
+	check.Stop()
+
+	if err != nil {
+		check.error = err
+		return check
 	}
 	defer resp.Body.Close()
 
@@ -162,12 +172,16 @@ func getHTTPStatus(url string, client *http.Client) (code int, err error) {
 	body, err = ioutil.ReadAll(resp.Body)
 
 	if err != nil {
-		return 0, err
+		check.error = err
+		return check
 	}
 
 	if len(body) < 1 {
-		return code, errors.New("Response body is 0 bytes")
+		check.error = errors.New("Response body is 0 bytes")
+		return check
 	}
 
-	return resp.StatusCode, nil
+	check.statusCode = resp.StatusCode
+	return check
+
 }
