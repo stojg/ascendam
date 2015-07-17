@@ -61,7 +61,7 @@ func TestGetState200Code(t *testing.T) {
 	ts := getTestServer(1, 200)
 	defer ts.Close()
 
-	check := checkURL(ts.URL, getHTTPClient(time.Millisecond*50))
+	check := doCheck(ts.URL, getHTTPClient(time.Millisecond*50))
 	message := getResult(check)
 
 	if !check.Ok() {
@@ -81,7 +81,7 @@ func TestGetStateNon200Code(t *testing.T) {
 	ts := getTestServer(1, 404)
 	defer ts.Close()
 
-	check := checkURL(ts.URL, getHTTPClient(time.Millisecond*50))
+	check := doCheck(ts.URL, getHTTPClient(time.Millisecond*50))
 	message := getResult(check)
 
 	if !check.Ok() {
@@ -101,7 +101,7 @@ func TestGetStateTimeout(t *testing.T) {
 	ts := getTestServer(50, 200)
 	defer ts.Close()
 
-	check := checkURL(ts.URL, getHTTPClient(time.Millisecond*30))
+	check := doCheck(ts.URL, getHTTPClient(time.Millisecond*30))
 	message := getResult(check)
 
 	if check.Ok() {
@@ -123,7 +123,7 @@ func TestGetStateRedirect(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	check := checkURL(ts.URL, getHTTPClient(time.Millisecond*30))
+	check := doCheck(ts.URL, getHTTPClient(time.Millisecond*30))
 	message := getResult(check)
 
 	if check.Ok() {
