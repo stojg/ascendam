@@ -9,19 +9,26 @@ server / application switch over.
 
 ## Usage
 
-	ascendam -url=http://twitter.com -max-ms=1300
+	ascendam -url=http://twitter.com -timeout=1
 
-Will constantly check if http://twitter.com responds with a 200 status within 1300ms. HTTP redirection is 
+Will constantly check if http://twitter.com responds with a 200 status within 1 second. HTTP redirection is 
 regarded as down.
 
 Example output:
 
-	$ ascendam -url=https://twitter.com -max-ms=1300
-    Running uptime check on 'https://twitter.com'
-    Timeout is set to 1.3s
-    15:29:53 Down	n/a	1.305579983s	request timed out (cancelled)
-    15:29:56 Up		200	897.269721ms
-    15:29:58 Down	n/a	1.304362985s	request timed out (cancelled)
+	$ $ ascendam -url=https://twitter.com -timeout=1
+	Running uptime check on 'https://twitter.com'
+	Timeout is set to 1s and pause 1s between checks
+	Stop ascendam with ctrl+c
+      
+	2017/03/15 22:24:31 Up	200	629.559281ms
+	2017/03/15 22:24:39 Down	n/a	975.512435ms	request timed out
+	2017/03/15 22:24:45 Up	200	502.761937ms
+	^C
+	6 outages of 16 checks 
+	Average loadtime: 490.592418ms 
+	Downtime: 6.003754117s 
+	Uptime: 10.491571835s
 
 ## Installation via go get
 
