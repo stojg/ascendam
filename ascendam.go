@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"os/signal"
 	"strings"
@@ -26,7 +27,8 @@ var (
 	url          string
 	timeoutSec   int
 	sleepTimeSec int
-	verbose      bool
+	verboseMode  bool
+	debugMode    bool
 )
 
 func init() {
@@ -35,9 +37,14 @@ func init() {
 	flag.StringVar(&url, "url", "", "the url to monitor")
 	flag.IntVar(&timeoutSec, "timeout", 4, "in seconds")
 	flag.IntVar(&sleepTimeSec, "sleep", 1, "Time between checks, in seconds")
-	flag.BoolVar(&verbose, "verbose", false, "Be more verbose")
+	flag.BoolVar(&verboseMode, "verbose", false, "Be more verbose")
+	flag.BoolVar(&debugMode, "debug", false, "Be super verbose")
 	flag.Usage = Usage
 	flag.Parse()
+
+	if debugMode {
+		verboseMode = true
+	}
 }
 
 func main() {
@@ -47,40 +54,36 @@ func main() {
 	// setup trapping of SIGINT
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
-	go func() {
-		// handle signal interrupts
-		for _ = range sig {
-			printSummary(checks)
-			os.Exit(0)
-		}
-	}()
 
 	timeout := time.Second * time.Duration(timeoutSec)
 	sleep := time.Second * time.Duration(sleepTimeSec)
 
 	fmt.Printf("Running uptime check on '%s'\n", url)
 	fmt.Printf("Timeout is set to %s and pause %s between checks\n", timeout, sleep)
-	fmt.Printf("Stop ascendam with ctrl+c\n")
+	fmt.Println("Stop ascendam with ctrl+c\n")
 
 	// Always log the first check
 	check := doCheck(url, getHTTPClient(timeout))
 	checks.Add(check)
 	log.Printf("%s\n", getResult(check))
 
-	// @todo(stig): emit a summary every minute
+	ticker := time.NewTicker(sleep)
+
+loop:
 	for {
 		select {
-		case <-time.After(time.Minute):
-			printSummary(checks)
 
-		case <-time.After(sleep):
+		case <-ticker.C:
 			check := doCheck(url, getHTTPClient(timeout))
-			if verbose || check.Ok() != checks.lastState {
+			if verboseMode || check.Ok() != checks.lastState {
 				log.Printf("%s\n", getResult(check))
 			}
 			checks.Add(check)
+		case <-sig:
+			break loop
 		}
 	}
+	printSummary(checks)
 }
 
 func printSummary(checks *CheckList) {
@@ -134,7 +137,7 @@ func getResult(check *Check) string {
 func getHTTPClient(timeout time.Duration) *http.Client {
 	transport := &httpclient.Transport{
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
-		DisableKeepAlives: false,
+		DisableKeepAlives: true,
 	}
 	return &http.Client{
 		Transport: transport,
@@ -152,11 +155,105 @@ func doCheck(url string, client *http.Client) *Check {
 	check := &Check{}
 
 	req, err := http.NewRequest("GET", url, nil)
+	req.Close = true
 	if err != nil {
 		check.error = err
 		return check
 	}
 	req.Header.Add("User-Agent", "github.com/stojg/ascendam")
+
+	trace := &httptrace.ClientTrace{
+
+		// GetConn is called before a connection is created or
+		// retrieved from an idle pool. The hostPort is the
+		// "host:port" of the target or proxy. GetConn is called even
+		// if there's already an idle cached connection available.
+		GetConn: func(hostPort string) {
+			debug("Getting connection to %s\n", hostPort)
+		},
+
+		// TLSHandshakeStart is called when the TLS handshake is started. When
+		// connecting to a HTTPS site via a HTTP proxy, the handshake happens after
+		// the CONNECT request is processed by the proxy.
+		TLSHandshakeStart: func() {
+			debug("Starting TLS handshake negotiation\n")
+		},
+
+		// TLSHandshakeDone is called after the TLS handshake with either the
+		// successful handshake's connection state, or a non-nil error on handshake
+		// failure.
+		TLSHandshakeDone: func(state tls.ConnectionState, err error) {
+			if err != nil {
+				debug("Error during TLS handshake negotiation: %s\n", err)
+			} else {
+				debug("TLS handshake negotiation done")
+			}
+		},
+
+		GotConn: func(connInfo httptrace.GotConnInfo) {
+			debug("Got connection to %s\n", connInfo.Conn.RemoteAddr())
+		},
+
+		// GotFirstResponseByte is called when the first byte of the response
+		// headers is available.
+		GotFirstResponseByte: func() {
+			debug("Got first byte\n")
+		},
+
+		// Got100Continue is called if the server replies with a "100
+		// Continue" response.
+		Got100Continue: func() {
+			debug("Got100Continue\n")
+		},
+
+		// DNSStart is called when a DNS lookup begins.
+		DNSStart: func(info httptrace.DNSStartInfo) {
+			debug("DNSStart\n")
+		},
+
+		// DNSDone is called when a DNS lookup ends.
+		DNSDone: func(info httptrace.DNSDoneInfo) {
+			debug("DNSDone\n")
+		},
+
+		// ConnectStart is called when a new connection's Dial begins.
+		// If net.Dialer.DualStack (IPv6 "Happy Eyeballs") support is
+		// enabled, this may be called multiple times.
+		ConnectStart: func(network, addr string) {
+			debug("ConnectStart\n")
+		},
+
+		// ConnectDone is called when a new connection's Dial
+		// completes. The provided err indicates whether the
+		// connection completedly successfully.
+		// If net.Dialer.DualStack ("Happy Eyeballs") support is
+		// enabled, this may be called multiple times.
+		ConnectDone: func(network, addr string, err error) {
+			debug("ConnectDone\n")
+		},
+
+		// WroteHeaders is called after the Transport has written
+		// the request headers.
+		WroteHeaders: func() {
+			debug("Wrote the HTTP headers")
+		},
+
+		// Wait100Continue is called if the Request specified
+		// "Expected: 100-continue" and the Transport has written the
+		// request headers but is waiting for "100 Continue" from the
+		// server before writing the request body.
+		Wait100Continue: func() {
+			debug("Wait100Continue")
+		},
+
+		// WroteRequest is called with the result of writing the
+		// request and any body. It may be called multiple times
+		// in the case of retried requests.
+		WroteRequest: func(info httptrace.WroteRequestInfo) {
+			debug("Wrote the request with body")
+		},
+	}
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 
 	check.Start()
 	resp, err := client.Do(req)
@@ -183,5 +280,10 @@ func doCheck(url string, client *http.Client) *Check {
 
 	check.statusCode = resp.StatusCode
 	return check
+}
 
+func debug(format string, v ...interface{}) {
+	if debugMode {
+		log.Printf(format, v...)
+	}
 }
