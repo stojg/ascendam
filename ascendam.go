@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/mreiferson/go-httpclient"
 	"io/ioutil"
 	"log"
 	"net"
@@ -15,6 +14,8 @@ import (
 	"os/signal"
 	"strings"
 	"time"
+
+	"github.com/mreiferson/go-httpclient"
 )
 
 var Usage = func() {
@@ -60,7 +61,7 @@ func main() {
 
 	fmt.Printf("Running uptime check on '%s'\n", url)
 	fmt.Printf("Timeout is set to %s and pause %s between checks\n", timeout, sleep)
-	fmt.Println("Stop ascendam with ctrl+c\n")
+	fmt.Println("Stop ascendam with ctrl+c")
 
 	// Always log the first check
 	check := doCheck(url, getHTTPClient(timeout))
@@ -274,7 +275,7 @@ func doCheck(url string, client *http.Client) *Check {
 	}
 
 	if len(body) < 1 {
-		check.error = errors.New("Response body is 0 bytes")
+		check.error = errors.New("response body is 0 bytes")
 		return check
 	}
 
