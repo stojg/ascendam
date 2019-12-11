@@ -136,9 +136,11 @@ func getResult(check *Check) string {
 // getHTTPClient will return a *http.Client with a connection timeout and
 // disallows redirections.
 func getHTTPClient(timeout time.Duration) *http.Client {
+
 	transport := &httpclient.Transport{
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true},
 		DisableKeepAlives: true,
+		RequestTimeout:    timeout,
 	}
 	return &http.Client{
 		Transport: transport,
@@ -150,113 +152,56 @@ func getHTTPClient(timeout time.Duration) *http.Client {
 }
 
 // doCheck is simple wrapper for doing a request and return the http status
-// code and eventually an error. If there is an error the http status code
+// code and possibly an error. If there is an error the http status code
 // will be set to 0.
 func doCheck(url string, client *http.Client) *Check {
 	check := &Check{}
 
 	req, err := http.NewRequest("GET", url, nil)
-	req.Close = true
 	if err != nil {
 		check.error = err
 		return check
 	}
+	req.Close = true
 	req.Header.Add("User-Agent", "github.com/stojg/ascendam")
+
+	var t0, t1, t2, t3, t4, t5, t6 time.Time
 
 	trace := &httptrace.ClientTrace{
 
-		// GetConn is called before a connection is created or
-		// retrieved from an idle pool. The hostPort is the
-		// "host:port" of the target or proxy. GetConn is called even
-		// if there's already an idle cached connection available.
 		GetConn: func(hostPort string) {
 			debug("Getting connection to %s\n", hostPort)
 		},
 
-		// TLSHandshakeStart is called when the TLS handshake is started. When
-		// connecting to a HTTPS site via a HTTP proxy, the handshake happens after
-		// the CONNECT request is processed by the proxy.
-		TLSHandshakeStart: func() {
-			debug("Starting TLS handshake negotiation\n")
-		},
-
-		// TLSHandshakeDone is called after the TLS handshake with either the
-		// successful handshake's connection state, or a non-nil error on handshake
-		// failure.
-		TLSHandshakeDone: func(state tls.ConnectionState, err error) {
-			if err != nil {
-				debug("Error during TLS handshake negotiation: %s\n", err)
-			} else {
-				debug("TLS handshake negotiation done")
-			}
-		},
-
-		GotConn: func(connInfo httptrace.GotConnInfo) {
-			debug("Got connection to %s\n", connInfo.Conn.RemoteAddr())
-		},
-
-		// GotFirstResponseByte is called when the first byte of the response
-		// headers is available.
-		GotFirstResponseByte: func() {
-			debug("Got first byte\n")
-		},
-
-		// Got100Continue is called if the server replies with a "100
-		// Continue" response.
+		TLSHandshakeStart:    func() { t5 = time.Now() },
+		TLSHandshakeDone:     func(_ tls.ConnectionState, _ error) { t6 = time.Now() },
+		GotConn:              func(_ httptrace.GotConnInfo) { t3 = time.Now() },
+		GotFirstResponseByte: func() { t4 = time.Now() },
 		Got100Continue: func() {
 			debug("Got100Continue\n")
 		},
-
-		// DNSStart is called when a DNS lookup begins.
-		DNSStart: func(info httptrace.DNSStartInfo) {
-			debug("DNSStart\n")
+		DNSStart: func(_ httptrace.DNSStartInfo) { t0 = time.Now() },
+		DNSDone: func(_ httptrace.DNSDoneInfo) {
+			t1 = time.Now()
+		},
+		ConnectStart: func(_, _ string) {
+			if t1.IsZero() {
+				t1 = time.Now()
+			}
 		},
 
-		// DNSDone is called when a DNS lookup ends.
-		DNSDone: func(info httptrace.DNSDoneInfo) {
-			debug("DNSDone\n")
-		},
-
-		// ConnectStart is called when a new connection's Dial begins.
-		// If net.Dialer.DualStack (IPv6 "Happy Eyeballs") support is
-		// enabled, this may be called multiple times.
-		ConnectStart: func(network, addr string) {
-			debug("ConnectStart\n")
-		},
-
-		// ConnectDone is called when a new connection's Dial
-		// completes. The provided err indicates whether the
-		// connection completedly successfully.
-		// If net.Dialer.DualStack ("Happy Eyeballs") support is
-		// enabled, this may be called multiple times.
-		ConnectDone: func(network, addr string, err error) {
-			debug("ConnectDone\n")
-		},
-
-		// WroteHeaders is called after the Transport has written
-		// the request headers.
-		WroteHeaders: func() {
-			debug("Wrote the HTTP headers")
-		},
-
-		// Wait100Continue is called if the Request specified
-		// "Expected: 100-continue" and the Transport has written the
-		// request headers but is waiting for "100 Continue" from the
-		// server before writing the request body.
-		Wait100Continue: func() {
-			debug("Wait100Continue")
-		},
-
-		// WroteRequest is called with the result of writing the
-		// request and any body. It may be called multiple times
-		// in the case of retried requests.
-		WroteRequest: func(info httptrace.WroteRequestInfo) {
-			debug("Wrote the request with body")
+		ConnectDone: func(net, addr string, err error) {
+			if err != nil {
+				log.Fatalf("unable to connect to host %v: %v", addr, err)
+			}
+			t2 = time.Now()
+			debug("Connected to %v\n", addr)
 		},
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 
 	check.Start()
+
 	resp, err := client.Do(req)
 	check.Stop()
 
@@ -266,8 +211,7 @@ func doCheck(url string, client *http.Client) *Check {
 	}
 	defer resp.Body.Close()
 
-	var body []byte
-	body, err = ioutil.ReadAll(resp.Body)
+	body, err := ioutil.ReadAll(resp.Body)
 
 	if err != nil {
 		check.error = err
@@ -285,6 +229,7 @@ func doCheck(url string, client *http.Client) *Check {
 
 func debug(format string, v ...interface{}) {
 	if debugMode {
-		log.Printf(format, v...)
+		format = "| debug | " + format
+		fmt.Printf(format, v...)
 	}
 }
